@@ -2,7 +2,7 @@ use crate::error::AnsibleError;
 use crate::types::{CommandResult, FileTransferResult, SystemInfo, FileCopyOptions};
 use crate::manager::{AnsibleManager, BatchResult};
 use serde::{Deserialize, Serialize};
-use log::info;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "task_type")]

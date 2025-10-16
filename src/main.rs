@@ -2,8 +2,17 @@ use rs_ansible::{AnsibleManager, InventoryConfig, TaskExecutor, Task, Playbook, 
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 初始化日志
-    env_logger::init();
+    // 初始化tracing日志
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+        )
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
     
     println!("=== Rust Ansible Library Advanced Demo ===\n");
     
@@ -115,7 +124,7 @@ async fn demo_task_executor_functionality() -> Result<()> {
     manager.add_host("demo-host".to_string(), demo_host);
     
     // 创建任务执行器
-    let executor = TaskExecutor::new(&manager);
+    let _executor = TaskExecutor::new(&manager);
     
     // 创建一个示例Playbook
     let playbook = Playbook::new("系统维护任务")

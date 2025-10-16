@@ -2,7 +2,7 @@ use crate::error::AnsibleError;
 use crate::types::{HostConfig, SystemInfo, CommandResult, FileTransferResult, FileCopyOptions};
 use crate::ssh::SshClient;
 use std::collections::HashMap;
-use log::info;
+use tracing::info;
 use tokio::task;
 use serde::Serialize;
 use std::sync::Arc;
