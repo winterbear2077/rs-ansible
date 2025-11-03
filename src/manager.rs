@@ -164,6 +164,42 @@ impl AnsibleManager {
         ).await
     }
 
+    /// 在所有主机上管理用户
+    pub async fn manage_user_all(&self, options: &crate::types::UserOptions) -> BatchResult<crate::types::UserResult> {
+        let host_names: Vec<String> = self.hosts.keys().cloned().collect();
+        self.manage_user_on_hosts(options, &host_names).await
+    }
+
+    /// 在指定主机列表上管理用户（带并发控制）
+    pub async fn manage_user_on_hosts(&self, options: &crate::types::UserOptions, host_names: &[String]) -> BatchResult<crate::types::UserResult> {
+        let options = options.clone();
+        self.execute_concurrent_operation(
+            host_names,
+            move |client| {
+                let opts = options.clone();
+                async move { client.manage_user(&opts) }
+            }
+        ).await
+    }
+
+    /// 向所有主机部署模板
+    pub async fn deploy_template_to_all(&self, options: &crate::types::TemplateOptions) -> BatchResult<crate::types::TemplateResult> {
+        let host_names: Vec<String> = self.hosts.keys().cloned().collect();
+        self.deploy_template_to_hosts(options, &host_names).await
+    }
+
+    /// 向指定主机列表部署模板（带并发控制）
+    pub async fn deploy_template_to_hosts(&self, options: &crate::types::TemplateOptions, host_names: &[String]) -> BatchResult<crate::types::TemplateResult> {
+        let options = options.clone();
+        self.execute_concurrent_operation(
+            host_names,
+            move |client| {
+                let opts = options.clone();
+                async move { client.deploy_template(&opts) }
+            }
+        ).await
+    }
+
     /// 通用的并发操作执行器
     async fn execute_concurrent_operation<T, F, Fut>(&self, host_names: &[String], operation: F) -> BatchResult<T>
     where

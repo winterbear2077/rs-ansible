@@ -95,3 +95,100 @@ pub struct FileHashInfo {
     pub hash: String,
     pub size: u64,
 }
+
+/// 用户管理选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserOptions {
+    pub name: String,                    // 用户名
+    pub state: UserState,                // 用户状态: present 或 absent
+    pub uid: Option<u32>,                // 用户ID
+    pub group: Option<String>,           // 主组
+    pub groups: Option<Vec<String>>,     // 附加组
+    pub home: Option<String>,            // 家目录
+    pub shell: Option<String>,           // 登录shell
+    pub password: Option<String>,        // 密码（已加密）
+    pub comment: Option<String>,         // 用户描述
+    pub create_home: bool,               // 是否创建家目录
+    pub system: bool,                    // 是否为系统用户
+    pub expires: Option<String>,         // 账户过期时间
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum UserState {
+    Present,  // 确保用户存在
+    Absent,   // 确保用户不存在
+}
+
+impl Default for UserOptions {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            state: UserState::Present,
+            uid: None,
+            group: None,
+            groups: None,
+            home: None,
+            shell: Some("/bin/bash".to_string()),
+            password: None,
+            comment: None,
+            create_home: true,
+            system: false,
+            expires: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserResult {
+    pub success: bool,
+    pub changed: bool,    // 是否做了改变
+    pub message: String,
+    pub user_info: Option<UserInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserInfo {
+    pub name: String,
+    pub uid: u32,
+    pub gid: u32,
+    pub home: String,
+    pub shell: String,
+    pub comment: String,
+}
+
+/// 模板渲染选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateOptions {
+    pub src: String,                     // 模板文件路径（本地）
+    pub dest: String,                    // 目标文件路径（远程）
+    pub variables: HashMap<String, String>,  // 模板变量
+    pub owner: Option<String>,           // 文件所有者
+    pub group: Option<String>,           // 文件组
+    pub mode: Option<String>,            // 文件权限
+    pub backup: bool,                    // 是否备份现有文件
+    pub validate: Option<String>,        // 验证命令（在替换前验证文件）
+}
+
+impl Default for TemplateOptions {
+    fn default() -> Self {
+        Self {
+            src: String::new(),
+            dest: String::new(),
+            variables: HashMap::new(),
+            owner: None,
+            group: None,
+            mode: Some("644".to_string()),
+            backup: false,
+            validate: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateResult {
+    pub success: bool,
+    pub changed: bool,     // 文件是否被改变
+    pub message: String,
+    pub diff: Option<String>,  // 文件差异（如果可用）
+}

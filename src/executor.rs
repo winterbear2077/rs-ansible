@@ -1,5 +1,5 @@
 use crate::error::AnsibleError;
-use crate::types::{CommandResult, FileTransferResult, SystemInfo, FileCopyOptions};
+use crate::types::{CommandResult, FileTransferResult, SystemInfo, FileCopyOptions, UserOptions, UserResult, TemplateOptions, TemplateResult};
 use crate::manager::{AnsibleManager, BatchResult};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -22,6 +22,16 @@ pub enum TaskType {
     Ping,
     #[serde(rename = "shell")]
     Shell { script: String },
+    #[serde(rename = "user")]
+    User { 
+        #[serde(flatten)]
+        options: UserOptions 
+    },
+    #[serde(rename = "template")]
+    Template { 
+        #[serde(flatten)]
+        options: TemplateOptions 
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +57,8 @@ pub enum TaskResult {
     CopyFile(BatchResult<FileTransferResult>),
     SystemInfo(BatchResult<SystemInfo>),
     Ping(BatchResult<bool>),
+    User(BatchResult<UserResult>),
+    Template(BatchResult<TemplateResult>),
 }
 
 impl TaskResult {
@@ -56,6 +68,8 @@ impl TaskResult {
             TaskResult::CopyFile(r) => r.success_rate(),
             TaskResult::SystemInfo(r) => r.success_rate(),
             TaskResult::Ping(r) => r.success_rate(),
+            TaskResult::User(r) => r.success_rate(),
+            TaskResult::Template(r) => r.success_rate(),
         }
     }
 
@@ -65,6 +79,8 @@ impl TaskResult {
             TaskResult::CopyFile(r) => &r.successful,
             TaskResult::SystemInfo(r) => &r.successful,
             TaskResult::Ping(r) => &r.successful,
+            TaskResult::User(r) => &r.successful,
+            TaskResult::Template(r) => &r.successful,
         }
     }
 
@@ -74,6 +90,8 @@ impl TaskResult {
             TaskResult::CopyFile(r) => &r.failed,
             TaskResult::SystemInfo(r) => &r.failed,
             TaskResult::Ping(r) => &r.failed,
+            TaskResult::User(r) => &r.failed,
+            TaskResult::Template(r) => &r.failed,
         }
     }
 }
@@ -124,6 +142,14 @@ impl<'a> TaskExecutor<'a> {
             TaskType::Ping => {
                 let batch_result = self.manager.ping_hosts(&hosts).await;
                 TaskResult::Ping(batch_result)
+            }
+            TaskType::User { options } => {
+                let batch_result = self.manager.manage_user_on_hosts(options, &hosts).await;
+                TaskResult::User(batch_result)
+            }
+            TaskType::Template { options } => {
+                let batch_result = self.manager.deploy_template_to_hosts(options, &hosts).await;
+                TaskResult::Template(batch_result)
             }
             TaskType::Shell { script } => {
                 // 创建临时脚本文件并执行
@@ -268,6 +294,24 @@ impl Task {
         Self {
             name: name.to_string(),
             task_type: TaskType::Shell { script: script.to_string() },
+            hosts: None,
+            ignore_errors: false,
+        }
+    }
+
+    pub fn user(name: &str, options: UserOptions) -> Self {
+        Self {
+            name: name.to_string(),
+            task_type: TaskType::User { options },
+            hosts: None,
+            ignore_errors: false,
+        }
+    }
+
+    pub fn template(name: &str, options: TemplateOptions) -> Self {
+        Self {
+            name: name.to_string(),
+            task_type: TaskType::Template { options },
             hosts: None,
             ignore_errors: false,
         }

@@ -12,11 +12,20 @@ pub enum AnsibleError {
     #[error("Command execution failed: {0}")]
     CommandExecutionError(String),
     
+    #[error("Command failed: {0}")]
+    CommandError(String),
+    
     #[error("File operation failed: {0}")]
     FileOperationError(String),
     
     #[error("System info collection failed: {0}")]
     SystemInfoError(String),
+    
+    #[error("Template error: {0}")]
+    TemplateError(String),
+    
+    #[error("Validation error: {0}")]
+    ValidationError(String),
     
     #[error("IO error: {0}")]
     IoError(String),

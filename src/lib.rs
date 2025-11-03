@@ -9,7 +9,11 @@ pub mod executor;
 mod tests;
 
 pub use error::AnsibleError;
-pub use types::{HostConfig, SystemInfo, CommandResult, FileTransferResult, NetworkInterface, FileCopyOptions};
+pub use types::{
+    HostConfig, SystemInfo, CommandResult, FileTransferResult, NetworkInterface, FileCopyOptions,
+    UserOptions, UserResult, UserInfo, UserState,
+    TemplateOptions, TemplateResult,
+};
 pub use ssh::SshClient;
 pub use manager::{AnsibleManager, BatchResult, HostConfigBuilder, BatchOperationStats};
 pub use config::InventoryConfig;
