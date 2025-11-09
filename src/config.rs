@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InventoryConfig {
     pub hosts: HashMap<String, HostConfig>,
     pub groups: HashMap<String, Vec<String>>,
@@ -56,7 +56,7 @@ impl InventoryConfig {
 
     /// 添加主机到指定组
     pub fn add_host_to_group(&mut self, host_name: String, group_name: String) {
-        self.groups.entry(group_name).or_insert_with(Vec::new).push(host_name);
+        self.groups.entry(group_name).or_default().push(host_name);
     }
 
     /// 获取组内所有主机

@@ -273,8 +273,8 @@ impl SshClient {
         
         // 设置所有者和组
         if options.owner.is_some() || options.group.is_some() {
-            let owner = options.owner.as_ref().map(|s| s.as_str()).unwrap_or("");
-            let group = options.group.as_ref().map(|s| s.as_str()).unwrap_or("");
+            let owner = options.owner.as_deref().unwrap_or("");
+            let group = options.group.as_deref().unwrap_or("");
             
             let chown_target = if !owner.is_empty() && !group.is_empty() {
                 format!("{}:{}", owner, group)

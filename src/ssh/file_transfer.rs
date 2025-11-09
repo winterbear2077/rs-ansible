@@ -86,8 +86,8 @@ impl SshClient {
         let file_size = metadata.len();
 
         // 创建目录（如果需要）
-        if options.create_dirs {
-            if let Some(parent_dir) = Path::new(remote_path).parent() {
+        if options.create_dirs
+            && let Some(parent_dir) = Path::new(remote_path).parent() {
                 let parent_str = parent_dir.to_string_lossy();
                 if !parent_str.is_empty() && parent_str != "/" {
                     let mkdir_cmd = format!("mkdir -p '{}'", parent_str);
@@ -100,7 +100,6 @@ impl SshClient {
                     }
                 }
             }
-        }
 
         // 备份现有文件（如果需要）
         if options.backup {

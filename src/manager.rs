@@ -7,13 +7,13 @@ use tokio::task;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-
+#[derive(Default)]
 pub struct AnsibleManager {
     hosts: HashMap<String, HostConfig>,
     max_concurrent_connections: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct BatchResult<T> {
     pub results: HashMap<String, Result<T, AnsibleError>>,
     pub successful: Vec<String>,
@@ -285,6 +285,7 @@ pub struct BatchOperationStats {
     pub estimated_duration_seconds: f32,
 }
 
+#[derive(Default)]
 pub struct HostConfigBuilder {
     config: HostConfig,
 }

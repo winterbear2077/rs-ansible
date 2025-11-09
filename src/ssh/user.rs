@@ -129,29 +129,24 @@ impl SshClient {
     /// 检查用户是否需要更新
     fn check_user_needs_update(&self, current: &UserInfo, options: &UserOptions) -> bool {
         // 检查各项配置是否匹配
-        if let Some(uid) = options.uid {
-            if current.uid != uid {
+        if let Some(uid) = options.uid
+            && current.uid != uid {
                 return true;
             }
-        }
         
-        if let Some(ref home) = options.home {
-            if &current.home != home {
+        if let Some(ref home) = options.home
+            && &current.home != home {
                 return true;
             }
-        }
         
-        if let Some(ref shell) = options.shell {
-            if &current.shell != shell {
+        if let Some(ref shell) = options.shell
+            && &current.shell != shell {
                 return true;
             }
-        }
-        
-        if let Some(ref comment) = options.comment {
-            if &current.comment != comment {
+        if let Some(ref comment) = options.comment
+            && &current.comment != comment {
                 return true;
             }
-        }
         
         // 检查组成员关系（简化版）
         if options.group.is_some() || options.groups.is_some() {
