@@ -2,7 +2,8 @@ use crate::error::AnsibleError;
 use crate::types::{CommandResult, FileTransferResult, SystemInfo, FileCopyOptions, UserOptions, UserResult, TemplateOptions, TemplateResult};
 use crate::manager::{AnsibleManager, BatchResult};
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "task_type")]
@@ -101,6 +102,8 @@ pub struct PlaybookResult {
     pub playbook_name: String,
     pub task_results: Vec<(String, TaskResult)>,
     pub overall_success: bool,
+    pub failed_hosts: HashSet<String>,  // 记录所有失败的主机
+    pub skipped_hosts: HashSet<String>, // 记录被跳过的主机
 }
 
 pub struct TaskExecutor<'a> {
@@ -112,43 +115,79 @@ impl<'a> TaskExecutor<'a> {
         Self { manager }
     }
 
-    /// 执行单个任务
-    pub async fn execute_task(&self, task: &Task) -> Result<TaskResult, AnsibleError> {
+    /// 执行单个任务，排除已失败的主机
+    pub async fn execute_task(&self, task: &Task, failed_hosts: &HashSet<String>) -> Result<TaskResult, AnsibleError> {
         info!("Executing task: {}", task.name);
 
-        let hosts = if let Some(ref specific_hosts) = task.hosts {
+        let all_hosts = if let Some(ref specific_hosts) = task.hosts {
             specific_hosts.clone()
         } else {
             self.manager.list_hosts().into_iter().cloned().collect()
         };
 
+        // 过滤掉已失败的主机
+        let active_hosts: Vec<String> = all_hosts
+            .iter()
+            .filter(|h| !failed_hosts.contains(h.as_str()))
+            .cloned()
+            .collect();
+
+        // 计算被跳过的主机
+        let skipped_hosts: Vec<String> = all_hosts
+            .iter()
+            .filter(|h| failed_hosts.contains(h.as_str()))
+            .cloned()
+            .collect();
+
+        if !skipped_hosts.is_empty() {
+            info!(
+                "Skipping task '{}' on {} failed host(s): {}",
+                task.name,
+                skipped_hosts.len(),
+                skipped_hosts.join(", ")
+            );
+        }
+
+        if active_hosts.is_empty() {
+            warn!("No active hosts available for task '{}'", task.name);
+            // 返回一个空的结果，表示所有主机都被跳过
+            let mut batch_result = BatchResult::new();
+            for host in skipped_hosts {
+                batch_result.add_result(
+                    host,
+                    Err(AnsibleError::SshConnectionError("Host skipped due to previous failure".to_string()))
+                );
+            }
+            return Ok(TaskResult::Ping(batch_result));
+        }
+
         let result = match &task.task_type {
             TaskType::Command { cmd } => {
-                let batch_result = self.manager.execute_command_on_hosts(cmd, &hosts).await;
+                let batch_result = self.manager.execute_command_on_hosts(cmd, &active_hosts).await;
                 TaskResult::Command(batch_result)
             }
             TaskType::CopyFile { src, dest, options } => {
                 let batch_result = if let Some(opts) = options {
-                    self.manager.copy_file_to_hosts_with_options(src, dest, &hosts, opts).await
+                    self.manager.copy_file_to_hosts_with_options(src, dest, &active_hosts, opts).await
                 } else {
-                    self.manager.copy_file_to_hosts(src, dest, &hosts).await
+                    self.manager.copy_file_to_hosts(src, dest, &active_hosts).await
                 };
                 TaskResult::CopyFile(batch_result)
             }
             TaskType::GetSystemInfo => {
-                let batch_result = self.manager.get_system_info_from_hosts(&hosts).await;
+                let batch_result = self.manager.get_system_info_from_hosts(&active_hosts).await;
                 TaskResult::SystemInfo(batch_result)
             }
             TaskType::Ping => {
-                let batch_result = self.manager.ping_hosts(&hosts).await;
+                let batch_result = self.manager.ping_hosts(&active_hosts).await;
                 TaskResult::Ping(batch_result)
             }
             TaskType::User { options } => {
-                let batch_result = self.manager.manage_user_on_hosts(options, &hosts).await;
+                let batch_result = self.manager.manage_user_on_hosts(options, &active_hosts).await;
                 TaskResult::User(batch_result)
             }
             TaskType::Template { options } => {
-                let batch_result = self.manager.deploy_template_to_hosts(options, &hosts).await;
+                let batch_result = self.manager.deploy_template_to_hosts(options, &active_hosts).await;
                 TaskResult::Template(batch_result)
             }
             TaskType::Shell { script } => {
@@ -161,16 +200,16 @@ impl<'a> TaskExecutor<'a> {
                     .map_err(|e| AnsibleError::FileOperationError(format!("Failed to create script file: {}", e)))?;
 
                 // 复制脚本到远程主机
-                let copy_result = self.manager.copy_file_to_hosts(&temp_file, &script_path, &hosts).await;
+                let copy_result = self.manager.copy_file_to_hosts(&temp_file, &script_path, &active_hosts).await;
                 
                 // 如果复制成功，执行脚本
                 if copy_result.success_rate() > 0.0 {
                     let exec_cmd = format!("chmod +x {} && {}", script_path, script_path);
-                    let batch_result = self.manager.execute_command_on_hosts(&exec_cmd, &hosts).await;
+                    let batch_result = self.manager.execute_command_on_hosts(&exec_cmd, &active_hosts).await;
                     
                     // 清理远程脚本文件
                     let cleanup_cmd = format!("rm -f {}", script_path);
-                    let _ = self.manager.execute_command_on_hosts(&cleanup_cmd, &hosts).await;
+                    let _ = self.manager.execute_command_on_hosts(&cleanup_cmd, &active_hosts).await;
                     
                     TaskResult::Command(batch_result)
                 } else {
@@ -182,28 +221,58 @@ impl<'a> TaskExecutor<'a> {
         Ok(result)
     }
 
-    /// 执行整个Playbook
+    /// 执行整个Playbook，支持主机级别的失败追踪
     pub async fn execute_playbook(&self, playbook: &Playbook) -> Result<PlaybookResult, AnsibleError> {
         info!("Starting playbook execution: {}", playbook.name);
 
         let mut task_results = Vec::new();
         let mut overall_success = true;
+        let mut failed_hosts: HashSet<String> = HashSet::new();
 
         for task in &playbook.tasks {
-            match self.execute_task(task).await {
+            match self.execute_task(task, &failed_hosts).await {
                 Ok(result) => {
                     let success = result.success_rate() > 0.0;
+                    let task_failed_hosts = result.failed_hosts();
+                    let task_successful_hosts = result.successful_hosts();
+                    
+                    // 记录本次任务失败的主机（不包括ignore_errors的任务）
+                    if !task.ignore_errors {
+                        for host in task_failed_hosts {
+                            if !failed_hosts.contains(host) {
+                                info!("Host '{}' failed on task '{}', will be skipped in subsequent tasks", 
+                                      host, task.name);
+                                failed_hosts.insert(host.clone());
+                            }
+                        }
+                    } else if !task_failed_hosts.is_empty() {
+                        info!(
+                            "Task '{}' failed on {} host(s) but errors are ignored: {}",
+                            task.name,
+                            task_failed_hosts.len(),
+                            task_failed_hosts.join(", ")
+                        );
+                    }
+                    
                     if !success && !task.ignore_errors {
                         overall_success = false;
                     }
                     
-                    info!("Task '{}' completed with {:.1}% success rate", 
-                          task.name, result.success_rate() * 100.0);
+                    info!(
+                        "Task '{}' completed - Success: {}/{}, Failed: {}/{}, Skipped: {}", 
+                        task.name,
+                        task_successful_hosts.len(),
+                        task_successful_hosts.len() + task_failed_hosts.len(),
+                        task_failed_hosts.len(),
+                        task_successful_hosts.len() + task_failed_hosts.len(),
+                        failed_hosts.len()
+                    );
                     
                     task_results.push((task.name.clone(), result));
                     
-                    // 如果任务失败且不忽略错误，停止执行
+                    // 如果所有主机都失败了且不忽略错误，停止执行
                     if !success && !task.ignore_errors {
+                        info!("All hosts failed on task '{}', stopping playbook execution", task.name);
                         break;
                     }
                 }
@@ -217,10 +286,15 @@ impl<'a> TaskExecutor<'a> {
             }
         }
 
+        // 统计最终被跳过的主机
+        let skipped_hosts = failed_hosts.clone();
+
         Ok(PlaybookResult {
             playbook_name: playbook.name.clone(),
             task_results,
             overall_success,
+            failed_hosts,
+            skipped_hosts,
         })
     }
 
