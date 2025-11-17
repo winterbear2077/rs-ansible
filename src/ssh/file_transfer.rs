@@ -21,54 +21,51 @@ impl SshClient {
         remote_path: &str,
         options: &FileCopyOptions,
     ) -> Result<FileTransferResult, AnsibleError> {
-        let hash_algorithm = options.hash_algorithm.as_deref().unwrap_or("sha256");
+        // 固定使用 SHA256 算法进行完整性验证
+        let hash_algorithm = "sha256";
 
         // ========== 第一次 Hash：计算本地文件 hash（总是执行） ==========
-        info!("[1/3] Calculating local file hash...");
+        info!("[1/3] Calculating local file hash (SHA256)...");
         let local_hash_info = self.calculate_local_file_hash(local_path, hash_algorithm)?;
         info!(
-            "Local file hash ({}): {} (size: {} bytes)",
-            hash_algorithm, local_hash_info.hash, local_hash_info.size
+            "Local file hash: {} (size: {} bytes)",
+            local_hash_info.hash, local_hash_info.size
         );
 
-        // ========== 第二次 Hash：检查远程文件（幂等性检查，仅当 verify_hash=true） ==========
-        if options.verify_hash {
-            info!("[2/3] Checking remote file for idempotency...");
-            match self.get_remote_file_hash(remote_path, hash_algorithm)? {
-                Some(remote_hash_info) => {
-                    // 比较 hash 和大小
-                    if remote_hash_info.hash == local_hash_info.hash
-                        && remote_hash_info.size == local_hash_info.size
-                    {
-                        info!(
-                            "Remote file unchanged (hash: {}), skipping transfer",
+        // ========== 第二次 Hash：检查远程文件（幂等性检查，总是执行） ==========
+        info!("[2/3] Checking remote file for idempotency...");
+        match self.get_remote_file_hash(remote_path, hash_algorithm)? {
+            Some(remote_hash_info) => {
+                // 比较 hash 和大小
+                if remote_hash_info.hash == local_hash_info.hash
+                    && remote_hash_info.size == local_hash_info.size
+                {
+                    info!(
+                        "Remote file unchanged (hash: {}), skipping transfer",
+                        remote_hash_info.hash
+                    );
+
+                    // 仍然需要更新权限和所有者（如果指定）
+                    self.apply_file_attributes(remote_path, options)?;
+
+                    return Ok(FileTransferResult {
+                        success: true,
+                        bytes_transferred: 0,
+                        message: format!(
+                            "File unchanged (hash: {}), attributes updated",
                             remote_hash_info.hash
-                        );
-
-                        // 仍然需要更新权限和所有者（如果指定）
-                        self.apply_file_attributes(remote_path, options)?;
-
-                        return Ok(FileTransferResult {
-                            success: true,
-                            bytes_transferred: 0,
-                            message: format!(
-                                "File unchanged (hash: {}), attributes updated",
-                                remote_hash_info.hash
-                            ),
-                        });
-                    } else {
-                        info!(
-                            "File changed - Local: {}, Remote: {}, will transfer",
-                            local_hash_info.hash, remote_hash_info.hash
-                        );
-                    }
-                }
-                None => {
-                    info!("Remote file {} does not exist, will transfer", remote_path);
+                        ),
+                    });
+                } else {
+                    info!(
+                        "File changed - Local: {}, Remote: {}, will transfer",
+                        local_hash_info.hash, remote_hash_info.hash
+                    );
                 }
             }
-        } else {
-            info!("[2/3] Idempotency check skipped (verify_hash=false)");
+            None => {
+                info!("Remote file {} does not exist, will transfer", remote_path);
+            }
         }
 
         // ========== 执行实际的文件传输（带原子性保证） ==========
@@ -150,7 +147,7 @@ impl SshClient {
         info!("File transferred: {} bytes", bytes_transferred);
 
         // ========== 第三次 Hash：验证传输后的文件（总是执行，确保传输完整性） ==========
-        info!("[3/3] Verifying file integrity after transfer (forced)...");
+        info!("[3/3] Verifying file integrity after transfer (SHA256, forced)...");
         match self.get_remote_file_hash(&temp_remote_path, hash_algorithm)? {
             Some(remote_hash_info) => {
                 // 验证 hash
@@ -158,13 +155,11 @@ impl SshClient {
                     // Hash 不匹配，删除临时文件并报错
                     let _ = self.execute_command(&format!("rm -f '{}'", temp_remote_path));
                     return Err(AnsibleError::FileOperationError(format!(
-                        "File transfer verification FAILED! Hash mismatch detected.\n\
-                         Local hash  ({}): {}\n\
-                         Remote hash ({}): {}\n\
+                        "File transfer verification FAILED! SHA256 hash mismatch detected.\n\
+                         Local hash:  {}\n\
+                         Remote hash: {}\n\
                          File may be corrupted during transfer: {}",
-                        hash_algorithm,
                         local_hash_info.hash,
-                        hash_algorithm,
                         remote_hash_info.hash,
                         local_path
                     )));
@@ -185,7 +180,7 @@ impl SshClient {
                 }
 
                 info!(
-                    "Transfer verification passed! Hash: {} (size: {} bytes)",
+                    "✓ Transfer verification passed! Hash: {} (size: {} bytes)",
                     remote_hash_info.hash, remote_hash_info.size
                 );
             }

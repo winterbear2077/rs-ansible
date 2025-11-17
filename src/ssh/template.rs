@@ -1,5 +1,5 @@
 use crate::error::AnsibleError;
-use crate::types::{TemplateOptions, TemplateResult};
+use crate::types::{TemplateOptions, TemplateResult, FileCopyOptions};
 use super::SshClient;
 use std::collections::HashMap;
 use tera::{Tera, Context};
@@ -43,7 +43,7 @@ impl SshClient {
                 // 如果需要备份
                 if options.backup {
                     info!("Creating backup of existing file");
-                    self.backup_file(&options.dest)?;
+                    self.backup_remote_file(&options.dest)?;
                 }
             } else {
                 debug!("Content is identical, no changes needed");
@@ -56,34 +56,42 @@ impl SshClient {
         // 如果有变更，写入新内容
         if changed {
             info!("Deploying changed content to remote host");
-            // 创建临时文件
-            let temp_path = format!("/tmp/rs_ansible_template_{}.tmp", chrono::Utc::now().timestamp());
-            let local_temp = format!("/tmp/rs_ansible_local_template_{}.tmp", chrono::Utc::now().timestamp());
+            // 创建本地临时文件
+            let local_temp = format!("/tmp/rs_ansible_template_{}.tmp", chrono::Utc::now().timestamp());
             
-            // 写入本地临时文件
-            debug!("Writing content to local temp file: {}", local_temp);
+            // 写入渲染后的内容到本地临时文件
+            debug!("Writing rendered content to local temp file: {}", local_temp);
             std::fs::write(&local_temp, &rendered_content)
                 .map_err(|e| {
                     error!("Failed to write temp file: {}", e);
                     AnsibleError::FileOperationError(format!("Failed to write temp file: {}", e))
                 })?;
             
-            // 上传到远程临时位置
-            debug!("Uploading to remote temp location: {}", temp_path);
-            self.upload_file(&local_temp, &temp_path)?;
-            
-            // 如果提供了验证命令，先验证
+            // 如果提供了验证命令，需要先上传到临时位置验证
             if let Some(ref validate_cmd) = options.validate {
-                info!("Validating template with command: {}", validate_cmd);
-                let validation_cmd = validate_cmd.replace("%s", &temp_path);
+                info!("Validating template before deployment");
+                let temp_remote = format!("/tmp/rs_ansible_validate_{}.tmp", chrono::Utc::now().timestamp());
+                
+                // ✅ 使用 file_transfer 的方法上传到临时位置（带 SHA256 验证）
+                let temp_options = FileCopyOptions {
+                    mode: Some("644".to_string()),
+                    owner: None,
+                    group: None,
+                    backup: false,
+                    create_dirs: true,
+                };
+                self.copy_file_to_remote_with_options(&local_temp, &temp_remote, &temp_options)?;
+                
+                // 执行验证命令
+                let validation_cmd = validate_cmd.replace("%s", &temp_remote);
                 let result = self.execute_command(&validation_cmd)?;
+                
+                // 清理远程临时文件
+                let _ = self.execute_command(&format!("rm -f '{}'", temp_remote));
                 
                 if result.exit_code != 0 {
                     error!("Template validation failed: {}", result.stderr);
-                    // 清理临时文件
-                    let _ = self.execute_command(&format!("rm -f {}", temp_path));
                     let _ = std::fs::remove_file(&local_temp);
-                    
                     return Err(AnsibleError::ValidationError(format!(
                         "Template validation failed: {}", result.stderr
                     )));
@@ -91,32 +99,18 @@ impl SshClient {
                 info!("Template validation passed");
             }
             
-            // 确保目标目录存在
-            if let Some(parent) = std::path::Path::new(&options.dest).parent() {
-                let parent_str = parent.to_string_lossy();
-                if !parent_str.is_empty() {
-                    debug!("Creating parent directory: {}", parent_str);
-                    let mkdir_cmd = format!("mkdir -p '{}'", parent_str);
-                    self.execute_command(&mkdir_cmd)?;
-                }
-            }
+            // ✅ 使用 file_transfer 的方法上传文件（自动带 SHA256 验证、幂等性检查、原子性保证）
+            info!("Uploading rendered template to remote host with integrity verification");
+            let file_options = FileCopyOptions {
+                mode: options.mode.clone(),
+                owner: options.owner.clone(),
+                group: options.group.clone(),
+                backup: false, // 已经在前面处理过备份
+                create_dirs: true, // 自动创建目标目录
+            };
             
-            // 移动到目标位置
-            debug!("Moving file to destination: {}", options.dest);
-            let mv_cmd = format!("mv '{}' '{}'", temp_path, options.dest);
-            let result = self.execute_command(&mv_cmd)?;
-            
-            if result.exit_code != 0 {
-                error!("Failed to move file to destination: {}", result.stderr);
-                let _ = std::fs::remove_file(&local_temp);
-                return Err(AnsibleError::FileOperationError(format!(
-                    "Failed to move file to destination: {}", result.stderr
-                )));
-            }
-            
-            // 设置文件权限和所有权
-            debug!("Setting file attributes (mode, owner, group)");
-            self.set_file_attributes(&options.dest, options)?;
+            let transfer_result = self.copy_file_to_remote_with_options(&local_temp, &options.dest, &file_options)?;
+            info!("Template uploaded: {}", transfer_result.message);
             
             // 清理本地临时文件
             let _ = std::fs::remove_file(&local_temp);
@@ -138,7 +132,7 @@ impl SshClient {
     }
 
     /// 渲染模板（使用 Tera 模板引擎）
-    fn render_template(&self, template: &str, variables: &HashMap<String, String>) -> Result<String, AnsibleError> {
+    fn render_template(&self, template: &str, variables: &HashMap<String, serde_json::Value>) -> Result<String, AnsibleError> {
         debug!("Creating Tera template engine instance");
         // 创建 Tera 实例
         let mut tera = Tera::default();
@@ -155,6 +149,7 @@ impl SshClient {
         debug!("Adding {} variables to template context", variables.len());
         let mut context = Context::new();
         for (key, value) in variables {
+            // ✅ 直接插入 serde_json::Value，Tera 的 Context 支持任意可序列化的值
             context.insert(key, value);
         }
         
@@ -216,8 +211,8 @@ impl SshClient {
         diff
     }
 
-    /// 备份文件
-    fn backup_file(&self, path: &str) -> Result<(), AnsibleError> {
+    /// 备份远程文件
+    fn backup_remote_file(&self, path: &str) -> Result<(), AnsibleError> {
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let backup_path = format!("{}.{}.backup", path, timestamp);
         
@@ -233,70 +228,6 @@ impl SshClient {
         }
         
         info!("Backup created successfully: {}", backup_path);
-        Ok(())
-    }
-
-    /// 上传文件到远程
-    fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<(), AnsibleError> {
-        let mut remote_file = self.session.scp_send(
-            std::path::Path::new(remote_path),
-            0o644,
-            std::fs::metadata(local_path)
-                .map_err(|e| AnsibleError::FileOperationError(format!("Failed to get file metadata: {}", e)))?
-                .len(),
-            None,
-        )?;
-
-        let mut local_file = std::fs::File::open(local_path)
-            .map_err(|e| AnsibleError::FileOperationError(format!("Failed to open local file: {}", e)))?;
-
-        std::io::copy(&mut local_file, &mut remote_file)
-            .map_err(|e| AnsibleError::FileOperationError(format!("Failed to copy file: {}", e)))?;
-
-        Ok(())
-    }
-
-    /// 设置文件属性（权限、所有者、组）
-    fn set_file_attributes(&self, path: &str, options: &TemplateOptions) -> Result<(), AnsibleError> {
-        // 设置权限
-        if let Some(ref mode) = options.mode {
-            debug!("Setting file mode: {} for {}", mode, path);
-            let cmd = format!("chmod {} '{}'", mode, path);
-            let result = self.execute_command(&cmd)?;
-            if result.exit_code != 0 {
-                error!("Failed to set file mode: {}", result.stderr);
-                return Err(AnsibleError::FileOperationError(format!(
-                    "Failed to set file mode: {}", result.stderr
-                )));
-            }
-        }
-        
-        // 设置所有者和组
-        if options.owner.is_some() || options.group.is_some() {
-            let owner = options.owner.as_deref().unwrap_or("");
-            let group = options.group.as_deref().unwrap_or("");
-            
-            let chown_target = if !owner.is_empty() && !group.is_empty() {
-                format!("{}:{}", owner, group)
-            } else if !owner.is_empty() {
-                owner.to_string()
-            } else {
-                format!(":{}", group)
-            };
-            
-            if !chown_target.is_empty() && chown_target != ":" {
-                debug!("Setting file ownership: {} for {}", chown_target, path);
-                let cmd = format!("chown {} '{}'", chown_target, path);
-                let result = self.execute_command(&cmd)?;
-                if result.exit_code != 0 {
-                    error!("Failed to set file ownership: {}", result.stderr);
-                    return Err(AnsibleError::FileOperationError(format!(
-                        "Failed to set file ownership: {}", result.stderr
-                    )));
-                }
-            }
-        }
-        
         Ok(())
     }
 }

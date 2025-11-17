@@ -70,8 +70,6 @@ async fn main() -> Result<()> {
     let remote_file2 = "/tmp/rs_ansible_test/remote/config_with_hash.txt";
     
     let hash_options = FileCopyOptions {
-        verify_hash: true,
-        hash_algorithm: Some("sha256".to_string()),
         mode: Some("644".to_string()),
         create_dirs: true,
         backup: false,
@@ -94,8 +92,6 @@ async fn main() -> Result<()> {
     
     let full_options = FileCopyOptions {
         mode: Some("755".to_string()),
-        verify_hash: true,
-        hash_algorithm: Some("sha256".to_string()),
         backup: true,
         create_dirs: true,
         ..Default::default()

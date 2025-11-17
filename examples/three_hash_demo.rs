@@ -71,8 +71,6 @@ async fn main() -> Result<()> {
     let remote_file = "/tmp/rs_ansible_test/remote_file.txt";
 
     let options = FileCopyOptions {
-        verify_hash: true,
-        hash_algorithm: Some("sha256".to_string()),
         mode: Some("644".to_string()),
         create_dirs: true,
         backup: false,
@@ -168,8 +166,6 @@ async fn main() -> Result<()> {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
     let options_no_idempotency = FileCopyOptions {
-        verify_hash: false,  // 禁用幂等性检查
-        hash_algorithm: Some("sha256".to_string()),
         mode: Some("644".to_string()),
         create_dirs: true,
         backup: false,

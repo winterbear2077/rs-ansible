@@ -66,13 +66,6 @@ pub struct FileCopyOptions {
     pub mode: Option<String>, // 文件权限，例如 "644", "755"
     pub backup: bool,         // 是否在覆盖前备份
     pub create_dirs: bool,    // 是否创建目标目录
-    #[serde(default = "default_verify_hash")]
-    pub verify_hash: bool,    // 是否验证文件hash（幂等性检查）
-    pub hash_algorithm: Option<String>, // hash算法: sha256, md5 等
-}
-
-fn default_verify_hash() -> bool {
-    true // 默认启用hash验证
 }
 
 impl Default for FileCopyOptions {
@@ -83,8 +76,6 @@ impl Default for FileCopyOptions {
             mode: Some("644".to_string()), // 默认权限
             backup: false,
             create_dirs: true,
-            verify_hash: true,  // 默认启用hash验证
-            hash_algorithm: Some("sha256".to_string()), // 默认使用sha256
         }
     }
 }
@@ -162,7 +153,7 @@ pub struct UserInfo {
 pub struct TemplateOptions {
     pub src: String,                     // 模板文件路径（本地）
     pub dest: String,                    // 目标文件路径（远程）
-    pub variables: HashMap<String, String>,  // 模板变量
+    pub variables: HashMap<String, serde_json::Value>,  // ✅ 支持任意 JSON 值（字符串、数字、数组、对象等）
     pub owner: Option<String>,           // 文件所有者
     pub group: Option<String>,           // 文件组
     pub mode: Option<String>,            // 文件权限

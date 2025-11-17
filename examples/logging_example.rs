@@ -63,9 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("此操作将显示详细的模板渲染和部署日志");
 
     let mut variables = HashMap::new();
-    variables.insert("app_name".to_string(), "myapp".to_string());
-    variables.insert("port".to_string(), "8080".to_string());
-    variables.insert("environment".to_string(), "production".to_string());
+    variables.insert("app_name".to_string(), serde_json::Value::String("MyApp".to_string()));
+    variables.insert("port".to_string(), serde_json::Value::Number(serde_json::Number::from(8080)));
+    variables.insert("environment".to_string(), serde_json::Value::String("production".to_string()));
 
     let _template_options = TemplateOptions {
         src: "examples/app.conf.tera".to_string(),
