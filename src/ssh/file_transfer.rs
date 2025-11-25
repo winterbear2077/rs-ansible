@@ -1,6 +1,7 @@
 use crate::error::AnsibleError;
 use crate::ssh::client::SshClient;
 use crate::types::{FileCopyOptions, FileTransferResult};
+use crate::utils::generate_remote_temp_path;
 use std::path::Path;
 use tracing::info;
 
@@ -113,8 +114,8 @@ impl SshClient {
             }
         }
 
-        // 使用临时文件进行原子性传输
-        let temp_remote_path = format!("{}.tmp.{}", remote_path, chrono::Utc::now().timestamp());
+        // 使用临时文件进行原子性传输（使用统一的工具函数生成唯一后缀）
+        let temp_remote_path = generate_remote_temp_path(remote_path);
 
         let initial_mode = if let Some(ref mode) = options.mode {
             u32::from_str_radix(mode, 8).unwrap_or(0o644)
@@ -153,14 +154,18 @@ impl SshClient {
                 // 验证 hash
                 if remote_hash_info.hash != local_hash_info.hash {
                     // Hash 不匹配，删除临时文件并报错
-                    let _ = self.execute_command(&format!("rm -f '{}'", temp_remote_path));
+                    // let _ = self.execute_command(&format!("rm -f '{}'", temp_remote_path));
                     return Err(AnsibleError::FileOperationError(format!(
                         "File transfer verification FAILED! SHA256 hash mismatch detected.\n\
                          Local hash:  {}\n\
+                         Local path: {} \n\
                          Remote hash: {}\n\
+                         Remote path: {} \n\
                          File may be corrupted during transfer: {}",
                         local_hash_info.hash,
+                        local_path,
                         remote_hash_info.hash,
+                        temp_remote_path,
                         local_path
                     )));
                 }

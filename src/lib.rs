@@ -4,6 +4,7 @@ pub mod ssh;
 pub mod manager;
 pub mod config;
 pub mod executor;
+pub mod utils;
 
 #[cfg(test)]
 mod tests;

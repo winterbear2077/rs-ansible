@@ -1,6 +1,7 @@
 use crate::error::AnsibleError;
 use crate::types::{CommandResult, FileTransferResult, SystemInfo, FileCopyOptions, UserOptions, UserResult, TemplateOptions, TemplateResult};
 use crate::manager::{AnsibleManager, BatchResult};
+use crate::utils::{generate_local_temp_path, generate_remote_temp_path};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use std::collections::HashSet;
@@ -191,9 +192,9 @@ impl<'a> TaskExecutor<'a> {
                 TaskResult::Template(batch_result)
             }
             TaskType::Shell { script } => {
-                // 创建临时脚本文件并执行
-                let script_path = format!("/tmp/rs_ansible_script_{}.sh", chrono::Utc::now().timestamp());
-                let temp_file = format!("/tmp/rs_ansible_local_script_{}.sh", chrono::Utc::now().timestamp());
+                // 创建临时脚本文件并执行（使用统一的工具函数生成唯一路径）
+                let script_path = generate_remote_temp_path("/tmp/rs_ansible_script.sh");
+                let temp_file = generate_local_temp_path("rs_ansible_local_script");
                 
                 // 写入本地临时文件
                 std::fs::write(&temp_file, script)
@@ -213,7 +214,7 @@ impl<'a> TaskExecutor<'a> {
                     
                     TaskResult::Command(batch_result)
                 } else {
-                    return Err(AnsibleError::FileOperationError("Failed to copy script to remote hosts".to_string()));
+                    return Err(AnsibleError::FileOperationError(format!("Failed to copy script to remote hosts: Reason: {:?}", copy_result.results)));
                 }
             }
         };

@@ -1,5 +1,6 @@
 use crate::error::AnsibleError;
 use crate::types::{TemplateOptions, TemplateResult, FileCopyOptions};
+use crate::utils::{generate_local_temp_path, generate_remote_temp_path};
 use super::SshClient;
 use std::collections::HashMap;
 use tera::{Tera, Context};
@@ -56,8 +57,8 @@ impl SshClient {
         // 如果有变更，写入新内容
         if changed {
             info!("Deploying changed content to remote host");
-            // 创建本地临时文件
-            let local_temp = format!("/tmp/rs_ansible_template_{}.tmp", chrono::Utc::now().timestamp());
+            // 创建本地临时文件（使用统一的工具函数生成唯一路径）
+            let local_temp = generate_local_temp_path("rs_ansible_template");
             
             // 写入渲染后的内容到本地临时文件
             debug!("Writing rendered content to local temp file: {}", local_temp);
@@ -70,7 +71,7 @@ impl SshClient {
             // 如果提供了验证命令，需要先上传到临时位置验证
             if let Some(ref validate_cmd) = options.validate {
                 info!("Validating template before deployment");
-                let temp_remote = format!("/tmp/rs_ansible_validate_{}.tmp", chrono::Utc::now().timestamp());
+                let temp_remote = generate_remote_temp_path("/tmp/rs_ansible_validate");
                 
                 // ✅ 使用 file_transfer 的方法上传到临时位置（带 SHA256 验证）
                 let temp_options = FileCopyOptions {
