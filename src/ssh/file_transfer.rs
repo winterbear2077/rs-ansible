@@ -154,7 +154,7 @@ impl SshClient {
                 // 验证 hash
                 if remote_hash_info.hash != local_hash_info.hash {
                     // Hash 不匹配，删除临时文件并报错
-                    // let _ = self.execute_command(&format!("rm -f '{}'", temp_remote_path));
+                    let _ = self.execute_command(&format!("rm -f '{}'", temp_remote_path));
                     return Err(AnsibleError::FileOperationError(format!(
                         "File transfer verification FAILED! SHA256 hash mismatch detected.\n\
                          Local hash:  {}\n\
