@@ -101,9 +101,11 @@ impl SshClient {
 
         // 备份现有文件（如果需要）
         if options.backup {
+            // 在 Rust 端生成时间戳，避免 shell 命令中的 $() 被当作字面字符串
+            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
             let backup_cmd = format!(
-                "[ -f '{}' ] && cp '{}' '{}.bak.$(date +%Y%m%d_%H%M%S)' || true",
-                remote_path, remote_path, remote_path
+                "[ -f '{}' ] && cp '{}' '{}.bak.{}' || true",
+                remote_path, remote_path, remote_path, timestamp
             );
             let backup_result = self.execute_command(&backup_cmd)?;
             if backup_result.exit_code != 0 {
