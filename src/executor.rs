@@ -221,7 +221,7 @@ impl<'a> TaskExecutor<'a> {
                 let temp_file = generate_local_temp_path("rs_ansible_local_script");
                 
                 // 确保脚本使用 Unix 换行符 (\n)，避免在 Windows 上生成 \r\n 导致执行失败
-                let script_unix = script.replace("\r\n", "\n");
+                let script_unix = script.replace('\r', "");
                 
                 // 写入本地临时文件
                 std::fs::write(&temp_file, script_unix)
