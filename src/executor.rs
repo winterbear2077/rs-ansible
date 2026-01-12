@@ -96,6 +96,30 @@ impl TaskResult {
             TaskResult::Template(r) => &r.failed,
         }
     }
+
+    /// 获取所有失败主机的错误信息
+    pub fn get_failures(&self) -> Vec<(String, String)> {
+        let mut failures = Vec::new();
+        
+        match self {
+            TaskResult::Command(r) => Self::collect_failures(r, &mut failures),
+            TaskResult::CopyFile(r) => Self::collect_failures(r, &mut failures),
+            TaskResult::SystemInfo(r) => Self::collect_failures(r, &mut failures),
+            TaskResult::Ping(r) => Self::collect_failures(r, &mut failures),
+            TaskResult::User(r) => Self::collect_failures(r, &mut failures),
+            TaskResult::Template(r) => Self::collect_failures(r, &mut failures),
+        }
+        
+        failures
+    }
+
+    fn collect_failures<T>(result: &BatchResult<T>, failures: &mut Vec<(String, String)>) {
+        for host in &result.failed {
+            if let Some(Err(e)) = result.results.get(host) {
+                failures.push((host.clone(), e.to_string()));
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
