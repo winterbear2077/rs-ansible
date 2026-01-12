@@ -21,7 +21,14 @@ impl SshClient {
         
         // 渲染模板
         debug!("Rendering template with {} variables", options.variables.len());
-        let rendered_content = self.render_template(&template_content, &options.variables)?;
+        let mut rendered_content = self.render_template(&template_content, &options.variables)?;
+        
+        // 确保渲染后的内容使用 Unix 换行符 (\n)，避免在 Windows 上生成 \r\n 导致执行失败
+        if rendered_content.contains("\r\n") {
+            debug!("Converting CRLF to LF in rendered template content");
+            rendered_content = rendered_content.replace("\r\n", "\n");
+        }
+        
         info!("Template rendered successfully, size: {} bytes", rendered_content.len());
         
         // 检查远程文件是否存在
