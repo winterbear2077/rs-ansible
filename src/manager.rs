@@ -49,7 +49,7 @@ impl AnsibleManager {
     pub fn new() -> Self {
         Self {
             hosts: HashMap::new(),
-            max_concurrent_connections: 50, // 默认最大50个并发连接
+            max_concurrent_connections: 15, // 默认最大10个并发连接
         }
     }
 
