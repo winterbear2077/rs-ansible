@@ -56,6 +56,11 @@ impl SshClient {
         Ok(Self { session, config })
     }
 
+    /// 获取当前主机的配置信息
+    pub fn get_host_config(&self) -> &HostConfig {
+        &self.config
+    }
+
     /// 测试连接是否正常
     pub fn ping(&self) -> Result<bool, AnsibleError> {
         let result = self.execute_command("echo 'pong'")?;

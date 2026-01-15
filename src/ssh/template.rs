@@ -160,6 +160,12 @@ impl SshClient {
             // ✅ 直接插入 serde_json::Value，Tera 的 Context 支持任意可序列化的值
             context.insert(key, value);
         }
+
+        // 自动注入 Host 信息
+        context.insert("ansible_host", &self.config.hostname); // HostConfig 中的 hostname 通常是 IP 或者可解析的主机名
+        context.insert("inventory_hostname", &self.config.hostname); 
+        context.insert("ansible_port", &self.config.port);
+        context.insert("ansible_user", &self.config.username);
         
         // 渲染模板
         debug!("Rendering template with Tera engine");

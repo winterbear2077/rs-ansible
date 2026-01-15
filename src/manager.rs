@@ -241,7 +241,7 @@ impl AnsibleManager {
     }
 
     /// 通用的并发操作执行器
-    async fn execute_concurrent_operation<T, F, Fut>(
+    pub async fn execute_concurrent_operation<T, F, Fut>(
         &self,
         host_names: &[String],
         operation: F,
