@@ -166,7 +166,19 @@ impl AnsibleManager {
     ) -> BatchResult<FileTransferResult> {
         let local_path = local_path.to_string();
         let remote_path = remote_path.to_string();
-        let options = options.clone();
+        
+        // 优化：在此处预先计算本地文件 Hash，避免每个并发任务都重复计算
+        let mut options = options.clone();
+        if options.precomputed_hash.is_none() {
+             // 尝试计算 hash (SHA256)
+             // 如果计算成功，注入到 options 中
+             // 如果失败（例如文件不存在），则忽略，留给底层的 SshClient 再次尝试并汇报具体的错误
+             if let Ok(hash) = crate::utils::calculate_file_hash(&local_path, "sha256") {
+                 info!("Pre-calculated local file hash for batch transfer: {}", hash);
+                 options.precomputed_hash = Some(hash);
+             }
+        }
+
         self.execute_concurrent_operation(host_names, move |client| {
             let local = local_path.clone();
             let remote = remote_path.clone();

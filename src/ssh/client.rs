@@ -82,8 +82,8 @@ impl SshClient {
         let exit_code = channel.exit_status()?;
 
         info!(
-            "Command '{}' executed with exit code: {}",
-            command, exit_code
+            "Command '{}' on '{}' executed with exit code: {}",
+            command, self.config.hostname, exit_code
         );
 
         Ok(CommandResult {

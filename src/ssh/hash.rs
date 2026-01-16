@@ -1,8 +1,6 @@
 use crate::error::AnsibleError;
 use crate::ssh::client::SshClient;
 use crate::types::FileHashInfo;
-use md5::Md5;
-use sha2::{Digest as Sha2Digest, Sha256};
 
 impl SshClient {
     /// 计算本地文件的 hash 值
@@ -11,39 +9,10 @@ impl SshClient {
         local_path: &str,
         algorithm: &str,
     ) -> Result<FileHashInfo, AnsibleError> {
-        use std::fs::File;
-        use std::io::Read;
-
-        let mut file = File::open(local_path).map_err(|e| {
-            AnsibleError::FileOperationError(format!("Failed to open file for hash: {}", e))
-        })?;
-
-        let metadata = file.metadata().map_err(|e| {
+        let hash = crate::utils::calculate_file_hash(local_path, algorithm)?;
+        let metadata = std::fs::metadata(local_path).map_err(|e| {
             AnsibleError::FileOperationError(format!("Failed to get file metadata: {}", e))
         })?;
-
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)
-            .map_err(|e| AnsibleError::FileOperationError(format!("Failed to read file: {}", e)))?;
-
-        let hash = match algorithm.to_lowercase().as_str() {
-            "sha256" => {
-                let mut hasher = Sha256::new();
-                hasher.update(&buffer);
-                format!("{:x}", hasher.finalize())
-            }
-            "md5" => {
-                let mut hasher = Md5::new();
-                hasher.update(&buffer);
-                format!("{:x}", hasher.finalize())
-            }
-            _ => {
-                return Err(AnsibleError::FileOperationError(format!(
-                    "Unsupported hash algorithm: {}",
-                    algorithm
-                )));
-            }
-        };
 
         Ok(FileHashInfo {
             algorithm: algorithm.to_string(),

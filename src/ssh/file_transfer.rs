@@ -25,9 +25,22 @@ impl SshClient {
         // 固定使用 SHA256 算法进行完整性验证
         let hash_algorithm = "sha256";
 
-        // ========== 第一次 Hash：计算本地文件 hash（总是执行） ==========
-        info!("[1/3] Calculating local file hash (SHA256)...");
-        let local_hash_info = self.calculate_local_file_hash(local_path, hash_algorithm)?;
+        // ========== 第一次 Hash：计算本地文件 hash（如果提供了预计算 hash 则跳过） ==========
+        let local_hash_info = if let Some(ref hash) = options.precomputed_hash {
+            info!("[1/3] Using precomputed local file hash (SHA256)...");
+            let metadata = std::fs::metadata(local_path).map_err(|e| {
+                AnsibleError::FileOperationError(format!("Failed to get file metadata: {}", e))
+            })?;
+            crate::types::FileHashInfo {
+                algorithm: hash_algorithm.to_string(),
+                hash: hash.clone(),
+                size: metadata.len(),
+            }
+        } else {
+            info!("[1/3] Calculating local file hash (SHA256)...");
+            self.calculate_local_file_hash(local_path, hash_algorithm)?
+        };
+
         info!(
             "Local file hash: {} (size: {} bytes)",
             local_hash_info.hash, local_hash_info.size

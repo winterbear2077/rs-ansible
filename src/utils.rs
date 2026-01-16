@@ -1,3 +1,53 @@
+use crate::error::AnsibleError;
+use md5::Md5;
+use sha2::{Digest as Sha2Digest, Sha256};
+use std::fs::File;
+use std::io::{BufReader, Read};
+
+/// 计算本地文件的 Hash 值 (SHA256 或 MD5)
+pub fn calculate_file_hash(path: &str, algorithm: &str) -> Result<String, AnsibleError> {
+    let file = File::open(path).map_err(|e| {
+        AnsibleError::FileOperationError(format!("Failed to open file for hash: {}", e))
+    })?;
+
+    let match_algo = algorithm.to_lowercase();
+    let mut reader = BufReader::new(file);
+    let mut buffer = [0; 8192]; // 8KB buffer
+
+    let hash = match match_algo.as_str() {
+        "sha256" => {
+            let mut hasher = Sha256::new();
+            loop {
+                let count = reader.read(&mut buffer).map_err(|e| {
+                    AnsibleError::FileOperationError(format!("Failed to read file: {}", e))
+                })?;
+                if count == 0 { break; }
+                hasher.update(&buffer[..count]);
+            }
+            format!("{:x}", hasher.finalize())
+        }
+        "md5" => {
+            let mut hasher = Md5::new();
+            loop {
+                let count = reader.read(&mut buffer).map_err(|e| {
+                    AnsibleError::FileOperationError(format!("Failed to read file: {}", e))
+                })?;
+                if count == 0 { break; }
+                hasher.update(&buffer[..count]);
+            }
+            format!("{:x}", hasher.finalize())
+        }
+        _ => {
+            return Err(AnsibleError::FileOperationError(format!(
+                "Unsupported hash algorithm: {}",
+                algorithm
+            )));
+        }
+    };
+
+    Ok(hash)
+}
+
 /// 生成唯一的临时文件后缀
 /// 
 /// 使用纳秒级时间戳 + 随机数，确保在高并发场景下不会产生文件名冲突。

@@ -66,6 +66,9 @@ pub struct FileCopyOptions {
     pub mode: Option<String>, // 文件权限，例如 "644", "755"
     pub backup: bool,         // 是否在覆盖前备份
     pub create_dirs: bool,    // 是否创建目标目录
+    /// 预先计算的本地文件 Hash (SHA256)。如果提供，将跳过本地计算步骤。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub precomputed_hash: Option<String>,
 }
 
 impl Default for FileCopyOptions {
@@ -76,6 +79,7 @@ impl Default for FileCopyOptions {
             mode: Some("644".to_string()), // 默认权限
             backup: false,
             create_dirs: true,
+            precomputed_hash: None,
         }
     }
 }

@@ -87,6 +87,7 @@ impl SshClient {
                     group: None,
                     backup: false,
                     create_dirs: true,
+                    precomputed_hash: None,
                 };
                 self.copy_file_to_remote_with_options(&local_temp, &temp_remote, &temp_options)?;
                 
@@ -115,6 +116,7 @@ impl SshClient {
                 group: options.group.clone(),
                 backup: false, // 已经在前面处理过备份
                 create_dirs: true, // 自动创建目标目录
+                precomputed_hash: None,
             };
             
             let transfer_result = self.copy_file_to_remote_with_options(&local_temp, &options.dest, &file_options)?;
