@@ -4,7 +4,9 @@ use ssh2::Session;
 use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::Path;
-use tracing::info;
+use std::thread;
+use std::time::Duration;
+use tracing::{info, warn};
 
 /// SSH 客户端
 pub struct SshClient {
@@ -14,19 +16,63 @@ pub struct SshClient {
 }
 
 impl SshClient {
-    /// 创建新的 SSH 连接
+    /// 创建新的 SSH 连接（带重试机制）
     pub fn new(config: HostConfig) -> Result<Self, AnsibleError> {
-        let tcp =
-            TcpStream::connect(format!("{}:{}", config.hostname, config.port)).map_err(|e| {
+        let max_retries = 3;
+        let retry_delay = Duration::from_millis(1000);
+        let mut last_error = None;
+
+        for attempt in 1..=max_retries {
+            if attempt > 1 {
+                info!(
+                    "Retrying SSH connection to {}:{} (Attempt {}/{})",
+                    config.hostname, config.port, attempt, max_retries
+                );
+                thread::sleep(retry_delay * (attempt as u32 - 1));
+            }
+
+            match Self::connect_once(&config) {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    warn!(
+                        "SSH connection failed for {}:{}: {}. ",
+                        config.hostname, config.port, e
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            AnsibleError::SshConnectionError("Failed to connect after retries".to_string())
+        }))
+    }
+
+    /// 执行单次连接尝试
+    fn connect_once(config: &HostConfig) -> Result<Self, AnsibleError> {
+        let tcp = TcpStream::connect(format!("{}:{}", config.hostname, config.port)).map_err(
+            |e| {
                 AnsibleError::SshConnectionError(format!(
                     "Failed to connect to {}:{}: {}",
                     config.hostname, config.port, e
                 ))
-            })?;
+            },
+        )?;
+
+        // 优化：禁用 Nagle 算法，减少小包延迟，有助于握手稳定性
+        if let Err(e) = tcp.set_nodelay(true) {
+            warn!("Failed to set TCP_NODELAY: {}", e);
+        }
 
         let mut session = Session::new()?;
         session.set_tcp_stream(tcp);
-        session.handshake()?;
+        
+        // 优化：设置超时时间（10秒），避免握手长时间卡死
+        session.set_timeout(10000);
+        
+        session.handshake().map_err(|e| {
+            AnsibleError::SshConnectionError(format!("SSH Handshake failed: {}", e))
+        })?;
 
         // 认证
         if let Some(ref private_key_path) = config.private_key_path {
@@ -53,7 +99,10 @@ impl SshClient {
 
         info!("Successfully connected to {}", config.hostname);
 
-        Ok(Self { session, config })
+        Ok(Self {
+            session,
+            config: config.clone(),
+        })
     }
 
     /// 获取当前主机的配置信息
