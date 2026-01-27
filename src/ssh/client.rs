@@ -68,7 +68,7 @@ impl SshClient {
         session.set_tcp_stream(tcp);
         
         // 优化：设置超时时间（10秒），避免握手长时间卡死
-        session.set_timeout(10000);
+        // session.set_timeout(10000);
         
         session.handshake().map_err(|e| {
             AnsibleError::SshConnectionError(format!("SSH Handshake failed: {}", e))
