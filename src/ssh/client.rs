@@ -141,4 +141,41 @@ impl SshClient {
             stderr,
         })
     }
+
+    /// 执行远程命令并向其 stdin 写入数据（用于一次性 agent CLI：
+    /// 命令读取单个 JSON 请求，stdout 输出 NDJSON 帧）。
+    pub fn execute_command_with_input(
+        &self,
+        command: &str,
+        input: &[u8],
+    ) -> Result<CommandResult, AnsibleError> {
+        let mut channel = self.session.channel_session()?;
+        channel.exec(command)?;
+
+        channel.write_all(input)?;
+        channel.send_eof()?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        channel.read_to_string(&mut stdout)?;
+        channel.stderr().read_to_string(&mut stderr)?;
+
+        channel.wait_close()?;
+        let exit_code = channel.exit_status()?;
+
+        info!(
+            "Command '{}' on '{}' executed with input ({} bytes), exit code: {}",
+            command,
+            self.config.hostname,
+            input.len(),
+            exit_code
+        );
+
+        Ok(CommandResult {
+            exit_code,
+            stdout,
+            stderr,
+        })
+    }
 }

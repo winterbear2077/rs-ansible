@@ -15,6 +15,7 @@ pub use types::{
     UserOptions, UserResult, UserInfo, UserState,
     TemplateOptions, TemplateResult,
 };
+pub mod agent;
 pub use ssh::SshClient;
 pub use manager::{AnsibleManager, BatchResult, HostConfigBuilder, BatchOperationStats};
 pub use config::InventoryConfig;

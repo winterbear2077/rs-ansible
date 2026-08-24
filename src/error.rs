@@ -32,6 +32,9 @@ pub enum AnsibleError {
     
     #[error("SSH error: {0}")]
     Ssh2Error(String),
+
+    #[error("Agent error: {0}")]
+    AgentError(String),
 }
 
 impl From<std::io::Error> for AnsibleError {
